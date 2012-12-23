@@ -1,0 +1,325 @@
+public class Model3d {
+  private static final String LOG_TAG = Model3d.class.getSimpleName();
+	public int child;
+
+	// screen dimensions
+	public int sWidth;
+	public int sHeight;
+
+	// Texture
+	public int textureWidth;
+	public int textureHeight;
+	public int textureId;
+	private boolean updateTexture;
+
+	// Dimensions of sprite
+	private float spriteW;
+	private float spriteH;
+
+	// Animation
+	public Animation animation;
+
+	/** Store our model data in a float buffer. */
+	private final FloatBuffer mSquareCoords;
+	private final FloatBuffer mSqaureTextureCoords;
+	private final FloatBuffer mSquareNormalCoords;
+	private final ShortBuffer mIndices;
+
+	/* OBJ */
+	private int verticesCount;
+	private int indicesCount;
+
+	private final int[] genbuf;
+
+	/**
+	 * Store the model matrix. This matrix is used to move models from object
+	 * space (where each model can be thought of being located at the center of
+	 * the universe) to world space.
+	 */
+	private float[] mModelMatrix = new float[16];
+
+	/**
+	 * Allocate storage for the final combined matrix. This will be passed into
+	 * the shader program.
+	 */
+	private float[] mMVPMatrix = new float[16];
+
+	/** How many bytes per float. */
+	private final int mBytesPerFloat = 4;
+
+	private final int mBytesPerShort = 2;
+
+	/** Size of the position data in elements. */
+	private final int mCoordsSize = 3;
+
+	/** Size of the normal data in elements. */
+	private final int mNormalDataSize = 3;
+
+	/** Size of the texture coordinate data in elements. */
+	private final int mTextureCoordinateDataSize = 2;
+
+	/** This will be used to pass in the transformation matrix. */
+	private int mMVPMatrixHandle;
+
+	/** This will be used to pass in the modelview matrix. */
+	private int mMVMatrixHandle;
+
+	/** This will be used to pass in the texture. */
+	private int mTextureUniformHandle;
+
+	/** This will be used to pass in model position information. */
+	private int mPositionHandle;
+
+	/** This will be used to pass in model texture coordinate information. */
+	private int mTextureCoordinateHandle;
+
+	/** This will be used to pass in model normal information. */
+	private int mNormalHandle;
+
+	/** This is a handle to our texture data. */
+	private int[] mTextureDataHandle;
+
+	private final Context mActivityContext;
+
+	private AssetManager am;
+
+	private InputStream texture;
+
+	private boolean loaded;
+
+	private final Scene3D scene;
+
+	public Model3d(Context context, int resourceId) {
+		mActivityContext = context;
+
+		mSquareCoords = null;
+		mSqaureTextureCoords = null;
+		mSquareNormalCoords = null;
+		mIndices = null;
+
+		genbuf = new int[1];
+		Load3ds loader = new Load3ds();
+		scene = loader.Load(context, "box.3DS");
+		// initial vertices for our sprite (square)
+		/*
+		 * ObjLoader obj = new ObjLoader(mActivityContext);
+		 * 
+		 * VBO = new int[4];
+		 * 
+		 * verticesCount = obj.verticesI; indicesCount = obj.indicesI; //
+		 * Initialize the buffers. mSquareCoords =
+		 * ByteBuffer.allocateDirect(obj.modelVertices.length * mBytesPerFloat)
+		 * .order(ByteOrder.nativeOrder()).asFloatBuffer();
+		 * mSquareCoords.put(obj.modelVertices).position(0);
+		 * 
+		 * mSqaureTextureCoords =
+		 * ByteBuffer.allocateDirect(obj.textureVertices.length *
+		 * mBytesPerFloat) .order(ByteOrder.nativeOrder()).asFloatBuffer();
+		 * mSqaureTextureCoords.put(obj.textureVertices).position(0);
+		 * 
+		 * mSquareNormalCoords =
+		 * ByteBuffer.allocateDirect(obj.normalVertices.length * mBytesPerFloat)
+		 * .order(ByteOrder.nativeOrder()).asFloatBuffer();
+		 * mSquareNormalCoords.put(obj.normalVertices).position(0);
+		 * 
+		 * mIndices = ByteBuffer.allocateDirect(obj.indicesShort.length *
+		 * mBytesPerFloat) .order(ByteOrder.nativeOrder()).asShortBuffer();
+		 * mIndices.put(obj.indicesShort).position(0);
+		 * */
+		 am = context.getAssets(); 
+		 textureId = resourceId; 
+		 texture = getFile("olegkubik.bmp"); 
+		 
+		 updateTexture = true;
+		 
+		loaded = false;
+	}
+
+	public void draw(int _mProgramHandle, float[] _mViewMatrix,
+			float[] _mProjectionMatrix) {
+		int mProgramHandle = _mProgramHandle;
+		float[] mViewMatrix = _mViewMatrix;
+		float[] mProjectionMatrix = _mProjectionMatrix;
+				
+		mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgramHandle,"u_MVPMatrix");
+		mMVMatrixHandle = GLES20.glGetUniformLocation(mProgramHandle,"u_MVMatrix");
+		mTextureUniformHandle = GLES20.glGetUniformLocation(mProgramHandle,"u_Texture");
+		mPositionHandle = GLES20.glGetAttribLocation(mProgramHandle,"a_Position");
+		mTextureCoordinateHandle = GLES20.glGetAttribLocation(mProgramHandle,"a_TexCoordinate");
+		mNormalHandle = GLES20.glGetAttribLocation(mProgramHandle, "a_Normal");
+
+		if (updateTexture) {
+			if (mTextureDataHandle != null) {
+				GLES20.glDeleteTextures(1, mTextureDataHandle, 0);
+			}
+			mTextureDataHandle = TextureHelper.loadTexture(texture);
+			// mTextureDataHandle =
+			// TextureHelper.loadTexture(getFile("coinAnimation/1230025.png"));
+			// mTextureDataHandle = TextureHelper.loadTexture(mActivityContext,
+			// textureId);
+			textureWidth = mTextureDataHandle[1];
+			textureHeight = mTextureDataHandle[2];
+
+			updateTexture = false;
+		}
+		// GLES20.glBlendFunc(GLES20.GL_SRC_COLOR, GLES20.GL_DST_ALPHA);
+		/*	
+		// Set the active texture unit to texture unit 0.
+		GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+
+		// Bind the texture to this unit.
+		GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextureDataHandle[0]);
+		*/
+		// Tell the texture uniform sampler to use this texture in the shader by
+		// binding to texture unit 0.
+		//GLES20.glUniform1i(mTextureUniformHandle, 0);
+
+		long time = SystemClock.uptimeMillis() % 10000L;
+		float angleInDegrees = (360.0f / 10000.0f) * ((int) time);
+
+		// Identity matrix of the object
+		Matrix.setIdentityM(mModelMatrix, 0);
+		Matrix.scaleM(mModelMatrix, 0, 0.5f, 0.5f, 1.0f);
+		// Matrix.rotateM(mModelMatrix, 0, angleInDegrees, 0.0f, 0.0f, 0.0f);
+		// Scaling
+		//Matrix.rotateM(mModelMatrix, 0, angleInDegrees, 0.0f, 0.0f, 1.0f);
+		// Matrix.scaleM(mModelMatrix, 0, 0.5f, 0.5f, 0.0f);
+		// Moving
+		// Matrix.translateM(mModelMatrix, 0, 0.0f, 0.0f, -6.0f);
+		// Rotating
+
+		if (!loaded) {
+			loaded = true;
+			int i, num = scene.objects.size();
+
+			for (i = 0; i < num; i++) {
+				Object3D obj = scene.objects.get(i);
+				obj.glVertices = createBuffer(obj.vertexBuffer);
+
+				GLES20.glGenBuffers(1, genbuf, 0);
+				obj.glIndices = genbuf[0];
+				GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER,	obj.glIndices);
+				GLES20.glBufferData(GLES20.GL_ELEMENT_ARRAY_BUFFER,	obj.indCount * 2, null, GLES20.GL_STATIC_DRAW);
+
+				int k, mats = obj.faceMats.size();
+				for (k = 0; k < mats; k++) {
+					FaceMat mat = obj.faceMats.get(k);
+					ShortBuffer indBuf = ByteBuffer.allocateDirect(mat.indexBuffer.length * 2).order(ByteOrder.nativeOrder()).asShortBuffer();
+					indBuf.put(mat.indexBuffer);
+					indBuf.position(0);
+
+					GLES20.glBufferSubData(GLES20.GL_ELEMENT_ARRAY_BUFFER, mat.bufOffset * 2, mat.indexBuffer.length * 2, indBuf);
+				}
+				GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, 0);
+			}
+		}
+		// This multiplies the view matrix by the model matrix, and stores the
+		// result in the MVP matrix
+		// (which currently contains model * view).
+		Matrix.multiplyMM(mMVPMatrix, 0, mViewMatrix, 0, mModelMatrix, 0);
+
+		// Pass in the modelview matrix.
+		GLES20.glUniformMatrix4fv(mMVMatrixHandle, 1, false, mMVPMatrix, 0);
+
+		// This multiplies the modelview matrix by the projection matrix, and
+		// stores the result in the MVP matrix
+		// (which now contains model * view * projection).
+		Matrix.multiplyMM(mMVPMatrix, 0, mProjectionMatrix, 0, mMVPMatrix, 0);
+
+		// Pass in the combined matrix.
+		GLES20.glUniformMatrix4fv(mMVPMatrixHandle, 1, false, mMVPMatrix, 0);
+
+		if (genbuf[0] > 0) {
+			GLES20.glEnableVertexAttribArray(mPositionHandle);
+			GLES20.glEnableVertexAttribArray(mNormalHandle);
+			
+			int i, j, num;
+			num = scene.objects.size();
+			for (i = 0; i < num; i++) {
+				Object3D obj = scene.objects.get(i);
+
+				GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, obj.glVertices);
+				
+				GLES20.glVertexAttribPointer(mPositionHandle, mCoordsSize, GLES20.GL_FLOAT, false, 24, 0);
+				
+				GLES20.glVertexAttribPointer(mNormalHandle, mNormalDataSize, GLES20.GL_FLOAT, false, 24, 12);
+				GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0);
+
+				GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER,	obj.glIndices);
+
+				int mats = obj.faceMats.size();
+				for (j = 0; j < mats; j++) {
+					FaceMat mat = obj.faceMats.get(j);
+					/*
+					 * for (int k = 0; k < 3; k++) mAmbient[k] =
+					 * mat.material.ambient[k] * scene.ambient[k];
+					 * GLES20.glUniform4fv(muAmbient, 1, mAmbient, 0);
+					 * GLES20.glUniform4fv(muDiffuse, 1, mat.material.diffuse,
+					 * 0);
+					 */
+					GLES20.glDrawElements(GLES20.GL_TRIANGLES,	mat.indexBuffer.length, GLES20.GL_UNSIGNED_SHORT, mat.bufOffset * 2);
+				}
+
+				GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, 0);
+				
+				GLES20.glDisableVertexAttribArray(mPositionHandle);
+				GLES20.glDisableVertexAttribArray(mNormalHandle);
+			}
+
+		}
+		/*
+		 * GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, VBO[0]);
+		 * GLES20.glEnableVertexAttribArray(mPositionHandle);
+		 * GLES20.glVertexAttribPointer(mPositionHandle, mCoordsSize,
+		 * GLES20.GL_FLOAT, false, 0, 0);
+		 * 
+		 * // Pass in the normal information
+		 * GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, VBO[1]);
+		 * GLES20.glEnableVertexAttribArray(mNormalHandle);
+		 * GLES20.glVertexAttribPointer(mNormalHandle, mNormalDataSize,
+		 * GLES20.GL_FLOAT, false, 0, 0);
+		 * 
+		 * // Pass in the texture information
+		 * GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, VBO[2]);
+		 * GLES20.glEnableVertexAttribArray(mTextureCoordinateHandle);
+		 * GLES20.glVertexAttribPointer(mTextureCoordinateHandle,
+		 * mTextureCoordinateDataSize, GLES20.GL_FLOAT, false, 0, 0);
+		 * 
+		 * GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, VBO[3]);
+		 * GLES20.glDrawElements(GLES20.GL_TRIANGLES, indicesCount,
+		 * GLES20.GL_UNSIGNED_SHORT, 0);
+		 * GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, 0);
+		 */
+
+		// Draw the cube.
+		// GLES20.glDrawElements(GLES20.GL_TRIANGLES, totalEle,
+		// GLES20.GL_UNSIGNED_SHORT, indices);
+
+	}
+
+	private int createBuffer(float[] buffer) {
+		FloatBuffer floatBuf = ByteBuffer.allocateDirect(buffer.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+		floatBuf.put(buffer);
+		floatBuf.position(0);
+
+		GLES20.glGenBuffers(1, genbuf, 0);
+		int glBuf = genbuf[0];
+		GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, glBuf);
+		GLES20.glBufferData(GLES20.GL_ARRAY_BUFFER, buffer.length * 4,	floatBuf, GLES20.GL_STATIC_DRAW);
+		GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0);
+
+		return glBuf;
+	}
+
+	private InputStream getFile(String file) {
+		try {
+			return am.open(file);
+
+		} catch (IOException e) {
+			Log.v(LOG_TAG, "error");
+		}
+
+		return null;
+
+	}
+}
