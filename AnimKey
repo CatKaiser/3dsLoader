@@ -1,0 +1,4 @@
+public class AnimKey {
+  public float time;
+	public float[] data;
+}
